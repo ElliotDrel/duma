@@ -16,4 +16,6 @@ pub mod store;
 mod text;
 mod watch;
 
+pub use duma_platform as platform;
+
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
