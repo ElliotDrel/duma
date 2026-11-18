@@ -1,7 +1,16 @@
 //! The OpenAI API key lives in the OS credential store (Windows Credential Manager, macOS Keychain),
-//! never in settings or logs. `OPENAI_API_KEY` overrides it for development.
+//! never in settings or logs. `OPENAI_API_KEY` overrides it for development; debug builds also read it
+//! from the gitignored `.env` at the repo root (found by searching up from the working directory).
 
 use anyhow::Result;
+
+#[cfg(debug_assertions)]
+fn load_dotenv() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = dotenvy::dotenv();
+    });
+}
 
 const SERVICE: &str = "Duma";
 const ACCOUNT: &str = "openai-api-key";
@@ -11,6 +20,8 @@ fn entry() -> Result<keyring::Entry> {
 }
 
 pub fn api_key() -> Option<String> {
+    #[cfg(debug_assertions)]
+    load_dotenv();
     if let Ok(key) = std::env::var("OPENAI_API_KEY") {
         if !key.trim().is_empty() {
             return Some(key.trim().to_string());
