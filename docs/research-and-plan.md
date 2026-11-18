@@ -58,7 +58,7 @@ SwiftUI + local Voz ASR. What carries over:
 
 ## Product: the Duma loop
 
-One mental model: **every action operates on a target span of text and produces a new version of it.**
+One mental model: **every piece of text Duma touches gets a thread.** A thread is the conversation about that text: the original dictation, every spoken instruction, every preset run, every version, and the user's own manual edits observed afterward. Each new instruction is sent to the model with the thread's history, so "no, shorter, and keep the second point" works the way it would in a chat, while the result still lands in place in the target app.
 
 | Trigger | Target | Behavior |
 | --- | --- | --- |
@@ -66,53 +66,76 @@ One mental model: **every action operates on a target span of text and produces 
 | Hold dictation key, text selected | selection | Speech is an **instruction** ("make this shorter") → replace selection. |
 | Tap again within N seconds of any Duma output | last output | Refine it by voice ("no, more casual") without reselecting. |
 | Preset key (or say the preset name) | selection or last output | Run a saved prompt. Spell-check is preset #1 (USC's pipeline). |
-| Undo key | last output | Restore previous version. Each session keeps its version chain. |
+| Undo key | last output | Restore previous version. Each thread keeps its version chain. |
+
+Thread resolution: a selection that matches a version Duma produced (or the text in the field Duma last wrote to) reopens that thread; anything else starts a new one. Threads are browsable in the app afterward, so polishing can continue there too.
+
+Models are plug-and-play behind provider traits (STT, LLM). **v1 is cloud-only**, using established providers; local engines, installation, and fine-tuning come after the cloud experience is polished.
 
 Presets are first-class: name, prompt, model, hotkey, spoken alias, per-app defaults. Dictation cleanup itself is just the default preset.
 
 ## Speed architecture
 
-Target: key release → text in field **< 500 ms p50** for a cloud sentence, < 300 ms local. Measured from day one.
+Target: key release → text in field **< 500 ms p50** for a cloud sentence. Measured from day one.
 
-1. **Stream while speaking.** Audio goes to STT (streaming WebSocket or local chunked decoding behind VAD) during the hold, so only the last chunk is pending at release.
-2. **Warm everything.** Persistent HTTP/2 / WebSocket connections opened at startup and kept alive; local models loaded at idle; overlay window pre-created hidden.
-3. **Cheapest model that is good enough.** Rules → local 0.6B cleanup → cloud LLM, escalating only when needed. Short text never pays for a big model.
+1. **Stream while speaking.** Audio goes to a streaming cloud STT over WebSocket during the hold, so only the last chunk is pending at release.
+2. **Warm everything.** Persistent HTTP/2 / WebSocket connections opened at startup and kept alive; overlay window pre-created hidden.
+3. **Cheapest model that is good enough.** Deterministic rules first, a fast small cloud LLM for cleanup, a stronger model only for instructions and presets that need it.
 4. **Stream the LLM output** and start the paste as soon as the output is final; never block on logging, history writes, or UI.
 5. **Perf gates in CI** (USC pattern): every stage timed into the event log; the bench fails on regressions.
 
-## Data model
+## Data capture
 
-Local SQLite, append-only events per session: audio (Opus), raw ASR with timings, each preset/edit step (input, prompt, model, output, latency), inserted text, target app, and post-insert user edits (UI Automation on Windows, Accessibility on macOS, bounded watch like Coda). Export as JSONL for training. Cloud sync is opt-in and later.
+Capture everything that could later explain a bad result or train a better one. USC's logging depth is the floor, not the ceiling. All local; cloud sync is opt-in and later.
 
-Learning roadmap:
-1. Dictionary suggestions from observed edits.
-2. Gated LoRA on the local cleanup model (Coda recipe).
-3. Per-user ASR adaptation: LoRA on Whisper/Parakeet using the user's audio + their corrected text as labels.
+- **Storage:** SQLite as the queryable index, plus append-only JSONL event logs (USC pattern: every line stamped with channel, app version, pid, thread id) and raw audio (Opus) on disk. Writes happen off the hot path.
+- **Per dictation:** audio, device and sample rate, VAD segments, STT provider/model/request id, interim and final transcripts with word timings and confidences, every stage timestamp (key down → first audio → first partial → release → final transcript → LLM first token → LLM done → paste issued → paste observed).
+- **Per model call:** full prompt, thread context sent, model, parameters, raw response, token counts, latency, retries, guard decisions.
+- **Target context:** app bundle id / exe, window title, URL for browsers, field role, text before and after the cursor (bounded), selection, secure-field flag.
+- **Insertion:** method used, clipboard formats backed up and restored, whether the paste was observed landing in the field.
+- **After insertion (the edit watch):** observe the field Duma wrote to for 60 s (longer later if useful), store every change as a diff against Duma's output, with timestamps. Stop on app/window/field change, secure input, or screen lock. Coda proves this works on Mac; Windows uses UI Automation text-change events.
+- **Explicit feedback:** undo, re-run, thumbs, manual corrections in the app.
+- **Privacy controls:** pause capture, per-app exclusions, never capture secure fields, retention limits, one-click export and delete.
 
-## Tech stack
+Learning roadmap (after v1): dictionary suggestions from observed edits → prompt and preset tuning from the log → local models with gated per-user LoRA (Coda recipe) → per-user ASR adaptation.
 
-- **Rust workspace**, all hot-path logic in Rust:
-  - `duma-core`: session/version model, pipeline, provider traits (STT, LLM), presets, event log.
-  - `duma-platform`: hotkeys (`handy-keys`), mic (`handy-recorder`), selection capture, clipboard backup/restore, paste, focused-field observation. `windows` crate on Windows, `objc2` on macOS.
-  - `duma-stt` / `duma-llm`: cloud providers plus local via `transcribe-cpp` and a local cleanup model.
-- **Tauri 2 shell** for tray, overlay, settings, history, presets UI (React + TypeScript). The webview never sits on the hot path.
-- Updates: Velopack (proven in USC, supports both OSes) or Tauri updater.
-- Rejected: Electron (memory/startup), native UI per OS (double the UI work), Swift-only (Elliot develops on Windows).
+## Tech stack (decided 2026-11-18)
 
-Mac from Windows: CI builds and tests macOS on GitHub runners. Real Mac testing still needs an Apple Developer ID; without stable signing, macOS drops Accessibility permission on every rebuild (Coda's `SIGNING.md`).
+**Rust core + Tauri 2 shell (React + TypeScript), Rust FFI straight to the OS APIs.** Greenfield, with Handy's crates as dependencies.
+
+Why this stack:
+
+- **Native access is a property of the core language, not the UI framework.** Rust reaches every native API Duma needs with no wrapper layer: macOS Accessibility (`AXUIElement`, `AXObserver` notifications for value and selection changes) through `objc2-application-services` / `accessibility-sys`, AppKit and CGEvent through `objc2-app-kit`; Windows UI Automation (TextPattern, text-changed events) through the `windows` crate or `uiautomation`, plus SendInput, clipboard, and WinHTTP as USC already does. Anything missing is a few lines of `extern "C"`.
+- **Mac-first feel is reachable.** The overlay is a non-activating `NSPanel` so it never steals focus (`tauri-nspanel` plugin, or build the panel directly with `objc2`). Settings and history are ordinary windows where a webview is fine.
+- **Never a speed blocker.** Hotkey, audio, network, paste, and the edit watch all run in Rust threads. The webview only renders state pushed to it.
+- **Matches how Elliot works.** Same Rust code builds on Windows and Mac; Windows dev machines do most of the work, CI builds and tests macOS, the MacBook validates feel. One UI codebase.
+- **Proven:** the cross-platform leaders (Handy, Voquill, Voicetypr, Tambourine) all ship on it.
+
+Rejected:
+
+- SwiftUI app + Rust core (UniFFI): best Mac polish, but the Mac app cannot be built or run on Windows, and Windows needs a second native UI.
+- Electron: same webview story with a much heavier runtime and Node native addons for every OS call.
+- .NET / Avalonia, Flutter: weaker macOS Accessibility interop than Rust's `objc2`.
+
+Crate layout:
+
+- `duma-core`: threads, versions, pipeline, provider traits (STT, LLM), presets, event log.
+- `duma-platform`: hotkeys (`handy-keys`), mic (`handy-recorder`), selection capture, clipboard backup/restore, paste, field observation. `cfg(target_os)` modules for macOS and Windows behind one trait.
+- `duma-providers`: cloud STT and LLM clients.
+- `app/`: Tauri shell and React UI.
+
+Known native traps to design for: Electron and Chromium apps expose little to Accessibility until asked (set `AXManualAccessibility` / `AXEnhancedUserInterface` on the app element); elevated Windows apps silently drop injected input (UIPI); unsigned or re-signed macOS builds lose Accessibility permission on every rebuild, so a stable Developer ID signing identity is needed early.
 
 ## Build order
 
-1. **Walking skeleton (Windows):** hotkey → streaming cloud STT → cleanup → guarded paste, with event log and stage timings. Bench + perf budget in CI.
-2. Selection-as-instruction and refine-last-output (the loop).
-3. Presets + spell-check preset (port USC behaviors: literal protection, modifier waits, clipboard rules).
-4. macOS parity (AX selection, CGEvent paste, permissions onboarding, signing).
-5. Local engines: Parakeet/Whisper via `transcribe-cpp`, local cleanup model with guard.
-6. Edit observation → dictionary suggestions → gated LoRA.
-7. Rich text round-trip, per-app context, snippets, history UI polish.
+1. **Walking skeleton:** hotkey → streaming cloud STT → cleanup → guarded paste, full event log and stage timings. Built on Windows, run on Mac from the start so neither platform drifts. Bench + perf budget in CI.
+2. **Edit watch** on both platforms (Accessibility / UI Automation), writing diffs into the log.
+3. Threads: selection-as-instruction, refine-last-output with thread context, undo.
+4. Presets + spell-check preset (port USC behaviors: literal protection, modifier waits, clipboard rules).
+5. Per-app context, snippets, history and thread browser UI, rich text round-trip.
+6. Later: local engines, learning loop, fine-tuning.
 
 ## Open decisions
 
-- Greenfield with Handy's crates (recommended) vs forking Handy.
-- Default providers for v0 (fastest streaming STT and LLM to benchmark before choosing).
+- Default cloud providers for v1: benchmark the fastest streaming STT and fast LLMs before choosing.
 - License: MIT recommended, matching USC and allowing reuse of Handy/Coda MIT code.
