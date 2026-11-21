@@ -103,8 +103,39 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Checks GitHub Releases at launch and, if a newer signed build exists, installs it and restarts.
+/// Runs only in release builds; dev builds never self-update.
+async fn update_on_launch(app: AppHandle) {
+    use tauri_plugin_updater::UpdaterExt;
+    let engine = app.state::<Engine>();
+    let result = async {
+        let Some(update) = app.updater()?.check().await? else {
+            return Ok::<_, tauri_plugin_updater::Error>(None);
+        };
+        let version = update.version.clone();
+        update.download_and_install(|_, _| {}, || {}).await?;
+        Ok(Some(version))
+    }
+    .await;
+    match result {
+        Ok(Some(version)) => {
+            engine.log_event(
+                "update_installed",
+                serde_json::json!({ "version": version }),
+            );
+            app.restart();
+        }
+        Ok(None) => engine.log_event("update_none", serde_json::json!({})),
+        Err(error) => engine.log_event(
+            "update_failed",
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app)
         }))
@@ -137,6 +168,9 @@ pub fn run() {
             build_tray(&handle)?;
             if status.api_key.is_none() || !status.accessibility_trusted {
                 show_main(&handle);
+            }
+            if !cfg!(debug_assertions) {
+                tauri::async_runtime::spawn(update_on_launch(handle.clone()));
             }
             Ok(())
         })
