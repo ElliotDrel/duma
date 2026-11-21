@@ -15,7 +15,7 @@ Nothing else in v1: no dictionary, threads, voice edits, presets, undo, or edit 
 | Part | Job |
 | --- | --- |
 | Desktop app (Rust + Tauri, Mac and Windows) | Hotkeys, mic, overlay pill, selection copy, paste, sign-in. |
-| Supabase | Sign-in, one `runs` table, two edge functions (`token`, `polish`). Holds the OpenAI key. |
+| Supabase | Sign-in, one `runs` table, two edge functions (`token`, `polish`). Holds the OpenAI key. Nothing else. |
 | OpenAI | `gpt-live-transcribe` for speech, `gpt-6-luna` (reasoning effort `none`, standard tier) for polish and spell check. |
 
 ## Flows
@@ -36,13 +36,14 @@ There is no local database and no sync. The app reads the cloud on demand.
 
 ## Data
 
-- **Cloud (`runs` table, per run):** user, mode (`dictate` / `spellcheck`), transcript or input text, polished text, app name, model, stage timings, error, created at. Row-level security: users read only their own runs.
-- **Local only:** the audio of each dictation and the JSONL event log, in the app data folder. Audio never goes anywhere except OpenAI for transcription.
+- **One `run_id` ties everything together.** The app creates it (UUID v7) at key-down. It names the local audio file, tags every local log line, and is the primary key of the cloud row. Any run can be reprocessed from its audio by that id.
+- **Cloud (`runs` table, per run):** run id, user, mode (`dictate` / `spellcheck`), transcript or input text, polished text, app name, model, stage timings, error, created at. Row-level security: users read only their own runs.
+- **Local only:** `audio/{run_id}.wav` and the JSONL event log (`run_id` on every line), in the app data folder. Audio never goes anywhere except OpenAI for transcription.
 - **Never:** the OpenAI key on a user's machine.
 
 ## Paying for users' AI
 
-The OpenAI key lives only in Supabase secrets. Sign-in is required and access is invite-only. `polish` and `token` enforce a per-user daily cap. The OpenAI project has a hard monthly budget as a backstop.
+The OpenAI key lives only in Supabase secrets, and only signed-in users can call the functions. The OpenAI project's monthly budget limit is the spending guard. No invite list or per-user caps in v1; add them as issues if spend becomes a problem.
 
 ## Speed
 
