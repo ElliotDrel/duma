@@ -1,6 +1,6 @@
 # Duma v1 architecture
 
-Decided with Elliot on 2026-11-20. KISS: the fewest moving parts that make the core work well. Anything not listed here is a future GitHub issue, not v1.
+Decided with Elliot on 2026-11-20. KISS: the fewest moving parts that make the core work well. Anything not listed here is a [future issue](https://github.com/ElliotDrel/duma/issues?q=label%3Afuture), not v1.
 
 ## Core features
 
