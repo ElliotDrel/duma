@@ -30,26 +30,30 @@ fn position(app: &AppHandle) -> Option<(f64, f64)> {
     let scale = monitor.scale_factor();
     let size = monitor.work_area().size.to_logical::<f64>(scale);
     let origin = monitor.work_area().position.to_logical::<f64>(scale);
-    Some((origin.x + (size.width - WIDTH) / 2.0, origin.y + size.height - HEIGHT - BOTTOM_MARGIN))
+    Some((
+        origin.x + (size.width - WIDTH) / 2.0,
+        origin.y + size.height - HEIGHT - BOTTOM_MARGIN,
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn create(app: &AppHandle) {
     let (x, y) = position(app).unwrap_or((200.0, 200.0));
-    let built = tauri::WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
-        .title("Duma")
-        .inner_size(WIDTH, HEIGHT)
-        .position(x, y)
-        .resizable(false)
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focusable(false)
-        .focused(false)
-        .visible(false)
-        .build();
+    let built =
+        tauri::WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
+            .title("Duma")
+            .inner_size(WIDTH, HEIGHT)
+            .position(x, y)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focusable(false)
+            .focused(false)
+            .visible(false)
+            .build();
     if let Err(error) = built {
         log::error!("creating the overlay failed: {error}");
     }
@@ -63,7 +67,10 @@ pub fn create(app: &AppHandle) {
         .url(WebviewUrl::App("overlay.html".into()))
         .title("Duma")
         .position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
-        .size(tauri::Size::Logical(tauri::LogicalSize { width: WIDTH, height: HEIGHT }))
+        .size(tauri::Size::Logical(tauri::LogicalSize {
+            width: WIDTH,
+            height: HEIGHT,
+        }))
         .level(PanelLevel::Status)
         .has_shadow(false)
         .transparent(true)
@@ -71,7 +78,11 @@ pub fn create(app: &AppHandle) {
         .corner_radius(0.0)
         .style_mask(StyleMask::empty().borderless().nonactivating_panel())
         .with_window(|w| w.decorations(false).transparent(true).focusable(false))
-        .collection_behavior(CollectionBehavior::new().can_join_all_spaces().full_screen_auxiliary())
+        .collection_behavior(
+            CollectionBehavior::new()
+                .can_join_all_spaces()
+                .full_screen_auxiliary(),
+        )
         .build();
     match built {
         Ok(panel) => panel.hide(),
@@ -83,17 +94,28 @@ fn show(app: &AppHandle) {
     GENERATION.fetch_add(1, Ordering::SeqCst);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let Some(window) = handle.get_webview_window(LABEL) else { return };
+        let Some(window) = handle.get_webview_window(LABEL) else {
+            return;
+        };
         #[cfg(windows)]
         if let Ok(hwnd) = window.hwnd() {
             use windows::Win32::Foundation::HWND;
             use windows::Win32::UI::WindowsAndMessaging::{
-                HWND_TOPMOST, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow,
+                HWND_TOPMOST, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                SetWindowPos, ShowWindow,
             };
             unsafe {
                 let hwnd = HWND(hwnd.0);
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-                let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                let _ = SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
             }
             return;
         }

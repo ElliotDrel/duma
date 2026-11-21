@@ -157,20 +157,20 @@ impl FieldHandle {
                     text: Some(text),
                     ..Default::default()
                 };
-                if let Ok(ranges) = pattern.GetSelection() {
-                    if ranges.Length().unwrap_or(0) > 0 {
-                        let selection = ranges.GetElement(0)?;
-                        let selected = selection.GetText(-1)?.to_string();
-                        let prefix = document.Clone()?;
-                        prefix.MoveEndpointByRange(
-                            TextPatternRangeEndpoint_End,
-                            &selection,
-                            TextPatternRangeEndpoint_Start,
-                        )?;
-                        let start = crate::utf16_len(&prefix.GetText(-1)?.to_string());
-                        state.selection = Some((start, crate::utf16_len(&selected)));
-                        state.selected_text = Some(selected);
-                    }
+                if let Ok(ranges) = pattern.GetSelection()
+                    && ranges.Length().unwrap_or(0) > 0
+                {
+                    let selection = ranges.GetElement(0)?;
+                    let selected = selection.GetText(-1)?.to_string();
+                    let prefix = document.Clone()?;
+                    prefix.MoveEndpointByRange(
+                        TextPatternRangeEndpoint_End,
+                        &selection,
+                        TextPatternRangeEndpoint_Start,
+                    )?;
+                    let start = crate::utf16_len(&prefix.GetText(-1)?.to_string());
+                    state.selection = Some((start, crate::utf16_len(&selected)));
+                    state.selected_text = Some(selected);
                 }
                 return Ok(state);
             }
@@ -208,7 +208,7 @@ impl FieldHandle {
                 TextUnit_Character,
                 crate::utf16_len(expected) as i32,
             )?;
-            if range.GetText(-1)?.to_string() == expected {
+            if range.GetText(-1)? == expected {
                 range.Select()?;
                 return Ok(());
             }
@@ -452,11 +452,11 @@ impl ClipboardSnapshot {
             if is_handle_format(format) {
                 continue;
             }
-            if let Ok(handle) = unsafe { GetClipboardData(format) } {
-                if let Some(bytes) = unsafe { global_bytes(handle) } {
-                    total += bytes.len();
-                    formats.push((format, bytes));
-                }
+            if let Ok(handle) = unsafe { GetClipboardData(format) }
+                && let Some(bytes) = unsafe { global_bytes(handle) }
+            {
+                total += bytes.len();
+                formats.push((format, bytes));
             }
         }
         Ok(Self { formats })
@@ -509,7 +509,7 @@ unsafe fn set_global(format: u32, bytes: &[u8]) -> Result<()> {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer as *mut u8, bytes.len());
         let _ = GlobalUnlock(global);
         // On success the clipboard owns the memory; on failure it is still ours to free.
-        if let Err(error) = SetClipboardData(format, Some(HANDLE(global.0 as *mut c_void))) {
+        if let Err(error) = SetClipboardData(format, Some(HANDLE(global.0))) {
             let _ = GlobalFree(Some(global));
             return Err(error).context("SetClipboardData");
         }
@@ -526,7 +526,9 @@ pub fn clipboard_text() -> Option<String> {
     let handle = unsafe { GetClipboardData(CF_UNICODETEXT.0 as u32) }.ok()?;
     let bytes = unsafe { global_bytes(handle) }?;
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());

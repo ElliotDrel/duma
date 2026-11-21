@@ -77,6 +77,7 @@ impl Default for ModelSettings {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Preset {
     pub id: String,
     pub name: String,
@@ -84,18 +85,6 @@ pub struct Preset {
     pub hotkey: String,
     /// Overrides the edit model for this preset.
     pub model: Option<String>,
-}
-
-impl Default for Preset {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            name: String::new(),
-            prompt: String::new(),
-            hotkey: String::new(),
-            model: None,
-        }
-    }
 }
 
 fn default_presets() -> Vec<Preset> {

@@ -22,10 +22,10 @@ fn entry() -> Result<keyring::Entry> {
 pub fn api_key() -> Option<String> {
     #[cfg(debug_assertions)]
     load_dotenv();
-    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-        if !key.trim().is_empty() {
-            return Some(key.trim().to_string());
-        }
+    if let Ok(key) = std::env::var("OPENAI_API_KEY")
+        && !key.trim().is_empty()
+    {
+        return Some(key.trim().to_string());
     }
     entry()
         .ok()?

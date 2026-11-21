@@ -678,9 +678,7 @@ impl Engine {
                 ms: run.elapsed_ms(),
             });
             self.inner.ui(UiEvent::ThreadsChanged);
-        } else if result.is_ok() && !run.cancelled {
-            self.inner.ui(UiEvent::Idle);
-        } else if run.cancelled {
+        } else if result.is_ok() || run.cancelled {
             self.inner.ui(UiEvent::Idle);
         }
         result
@@ -690,24 +688,22 @@ impl Engine {
         run.app = Some(focus.app.clone());
         run.field = Some(focus.info.clone());
         run.excluded_app = excluded;
-        if !excluded {
-            if let Some(text) = &focus.state.text {
-                let (before, selected, after) = text::context_around(
-                    text,
-                    focus.state.selection,
-                    settings.capture.log_context_chars,
-                );
-                run.field_context = Some(json!({
-                    "before": before, "selected": selected, "after": after,
-                    "selection_utf16": focus.state.selection, "field_len_utf16": text::utf16_len(text),
-                }));
-            }
+        if !excluded && let Some(text) = &focus.state.text {
+            let (before, selected, after) = text::context_around(
+                text,
+                focus.state.selection,
+                settings.capture.log_context_chars,
+            );
+            run.field_context = Some(json!({
+                "before": before, "selected": selected, "after": after,
+                "selection_utf16": focus.state.selection, "field_len_utf16": text::utf16_len(text),
+            }));
         }
     }
 
     fn prompt_context(&self, focus: &Focus, excluded: bool, settings: &Settings) -> PromptContext {
         let before_cursor = (!excluded && settings.capture.model_context_chars > 0)
-            .then(|| focus.state.text.as_deref())
+            .then_some(focus.state.text.as_deref())
             .flatten()
             .map(|t| {
                 text::context_around(
@@ -982,10 +978,12 @@ impl Engine {
         )
         .to_lowercase();
         let terminal = TERMINALS.iter().any(|t| app.contains(t));
-        if field_unreadable && !terminal && !excluded {
-            if let Some(selection) = duma_platform::capture_selection_via_clipboard()? {
-                return Ok(Target::Selection(selection));
-            }
+        if field_unreadable
+            && !terminal
+            && !excluded
+            && let Some(selection) = duma_platform::capture_selection_via_clipboard()?
+        {
+            return Ok(Target::Selection(selection));
         }
         self.last_output_target()
             .map(Target::LastOutput)
@@ -1281,11 +1279,11 @@ impl Engine {
             spec,
             self.inner.log.clone(),
             move |span, start| {
-                if let Some(last) = change_inner.last_output.lock().unwrap().as_mut() {
-                    if last.version_id == version_id || last.thread_id == thread {
-                        last.text = span.to_string();
-                        last.start_utf16 = Some(start);
-                    }
+                if let Some(last) = change_inner.last_output.lock().unwrap().as_mut()
+                    && (last.version_id == version_id || last.thread_id == thread)
+                {
+                    last.text = span.to_string();
+                    last.start_utf16 = Some(start);
                 }
             },
             move |result| {

@@ -17,7 +17,9 @@ const CHUNK_MS: usize = 50;
 async fn main() -> anyhow::Result<()> {
     duma_openai::install_crypto_provider();
     let mut args = std::env::args().skip(1);
-    let path = args.next().ok_or_else(|| anyhow::anyhow!("usage: bench <file.wav> [runs]"))?;
+    let path = args
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("usage: bench <file.wav> [runs]"))?;
     let runs: usize = args.next().map(|r| r.parse()).transpose()?.unwrap_or(1);
     let key = duma_core::secrets::api_key().ok_or_else(|| anyhow::anyhow!("no OpenAI API key"))?;
 
@@ -50,10 +52,14 @@ async fn main() -> anyhow::Result<()> {
         let transcript = session.finish().await;
         let stt_ms = released.elapsed().as_millis();
         if let Some(error) = &transcript.error {
-            anyhow::bail!("transcription failed: {error}\n{:#?}", transcript.server_events);
+            anyhow::bail!(
+                "transcription failed: {error}\n{:#?}",
+                transcript.server_events
+            );
         }
 
-        let (instructions, input) = prompts::dictation(&settings, &transcript.text, &PromptContext::default());
+        let (instructions, input) =
+            prompts::dictation(&settings, &transcript.text, &PromptContext::default());
         let request = ResponseRequest {
             model: settings.cleanup.model.clone(),
             instructions,
@@ -68,8 +74,14 @@ async fn main() -> anyhow::Result<()> {
         let total_ms = released.elapsed().as_millis();
 
         println!("--- run {run}");
-        println!("open {open_ms} ms | first partial {:?} ms after open", transcript.first_delta_ms);
-        println!("release -> transcript {stt_ms} ms | cleanup {} ms | release -> text {total_ms} ms", cleanup.latency_ms);
+        println!(
+            "open {open_ms} ms | first partial {:?} ms after open",
+            transcript.first_delta_ms
+        );
+        println!(
+            "release -> transcript {stt_ms} ms | cleanup {} ms | release -> text {total_ms} ms",
+            cleanup.latency_ms
+        );
         println!("transcript: {}", transcript.text);
         match &cleanup.error {
             Some(error) => println!("cleanup error: {error}"),

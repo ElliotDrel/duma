@@ -66,10 +66,10 @@ impl ClipboardRestore {
 
 impl Drop for ClipboardRestore {
     fn drop(&mut self) {
-        if let (Some(backup), Some(ours)) = (self.backup.take(), self.ours) {
-            if clipboard_sequence() == ours {
-                let _ = backup.restore();
-            }
+        if let (Some(backup), Some(ours)) = (self.backup.take(), self.ours)
+            && clipboard_sequence() == ours
+        {
+            let _ = backup.restore();
         }
     }
 }
@@ -160,10 +160,8 @@ pub fn capture_selection_via_clipboard() -> Result<Option<String>> {
         }
         sleep(Duration::from_millis(5));
     }
-    if changed {
-        if let Some(backup) = backup {
-            let _ = backup.restore();
-        }
+    if changed && let Some(backup) = backup {
+        let _ = backup.restore();
     }
     Ok(copied.filter(|t| !t.is_empty()))
 }

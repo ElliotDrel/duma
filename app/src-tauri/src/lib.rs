@@ -39,7 +39,11 @@ fn set_api_key(engine: State<'_, Engine>, key: String) -> CommandResult<()> {
 }
 
 #[tauri::command]
-fn list_threads(engine: State<'_, Engine>, limit: usize, offset: usize) -> CommandResult<Vec<ThreadSummary>> {
+fn list_threads(
+    engine: State<'_, Engine>,
+    limit: usize,
+    offset: usize,
+) -> CommandResult<Vec<ThreadSummary>> {
     engine.threads(limit, offset).map_err(err)
 }
 
@@ -73,7 +77,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let channel = Channel::current();
     TrayIconBuilder::with_id("duma")
         .icon(app.default_window_icon().cloned().expect("app icon"))
-        .tooltip(if channel == Channel::Dev { "Duma (dev)" } else { "Duma" })
+        .tooltip(if channel == Channel::Dev {
+            "Duma (dev)"
+        } else {
+            "Duma"
+        })
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -82,7 +90,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 show_main(tray.app_handle());
             }
         })
@@ -92,7 +105,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app)
+        }))
         .plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
@@ -111,7 +126,13 @@ pub fn run() {
             app.manage(engine);
             // The main window is `create: false` in the config so its page can't call a command
             // before the engine above is managed.
-            let main_config = app.config().app.windows.iter().find(|w| w.label == "main").expect("main window config");
+            let main_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .expect("main window config");
             tauri::WebviewWindowBuilder::from_config(&handle, main_config)?.build()?;
             build_tray(&handle)?;
             if status.api_key.is_none() || !status.accessibility_trusted {
@@ -121,11 +142,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             // Closing the main window keeps Duma running in the tray.
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+            {
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .invoke_handler(tauri::generate_handler![

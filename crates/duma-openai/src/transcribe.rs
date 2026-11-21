@@ -101,6 +101,8 @@ pub struct Connection {
 impl Connection {
     /// Connects, sends `session.update` and waits for `session.updated`, so a bad configuration fails here
     /// rather than mid-dictation.
+    // The error is the full failure record (timings, server events) for the run log, so it is large on purpose.
+    #[allow(clippy::result_large_err)]
     pub async fn open(api_key: &str, config: &TranscribeConfig) -> Result<Self, Transcript> {
         let started = Instant::now();
         let mut record = Transcript::default();
