@@ -1,5 +1,7 @@
 # Duma — research and plan
 
+> **Superseded (2026-11-20):** the product, speed, data capture, build order and open-decision sections below are replaced by [architecture.md](architecture.md). The landscape and reference-repo research stays valid as history.
+
 Status: draft, 2026-11-18. Star counts pulled from the GitHub API that day.
 
 ## Goal
